@@ -1,68 +1,89 @@
 # utils.py
 import requests
 import json
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # Keep for potential fallback/secondary checks if needed, but primary analysis shifts to AI
 from typing import Union
 
-# Initialize the VADER sentiment analyzer
+# Initialize the VADER sentiment analyzer (kept for now, but its primary role in analyze_entry will change)
 analyzer = SentimentIntensityAnalyzer()
 
 # --- Constants ---
-# Keywords and phrases for entry analysis
-SAFETY_RED_FLAGS = ["end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless", "despair", "give up"]
+# Keywords and phrases for entry analysis (these lists will now be less critical, as AI handles nuance)
+# Kept for very basic initial checks or as fallback if AI classification fails
+SAFETY_RED_FLAGS = ["end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless", "despair", "give up", "death", "die", "harm myself", "self harm", "unalive", "kms", "slewerslide"]
 TECH_KEYWORDS = ["react", "javascript", "python", "html", "api", "component", "code", "bug", "error", "debug", "function", "variable"]
-INSTRUCTION_PHRASES = ["write me", "how do i", "generate", "make this", "summarise", "explain", "create a", "give me", "tell me about"]
-QUIET_RESPONSES = ["ok", "fine", ".", "...", "idk", "nah", "nope", "nothing", "", " "] # Added empty string and space for robustness
+INSTRUCTION_PHRASES = [
+    "write me", "how do i", "generate", "make this", "summarise", "explain",
+    "create a", "give me", "tell me about", "joke", "tell me a joke", "what is",
+    "how are you", "what's up", "hi", "hello", "hey", "good morning", "good evening",
+    "how's it going", "what's your name", "who are you"
+]
+QUIET_RESPONSES = ["ok", "fine", ".", "...", "idk", "nah", "nope", "nothing", "", " "]
 
-# Define a threshold for what constitutes a "short" entry for the purpose of prompting deeper reflection
-SHORT_ENTRY_LENGTH_THRESHOLD = 15 # Entries shorter than this (excluding leading/trailing spaces) will be considered "quiet"
+SHORT_ENTRY_LENGTH_THRESHOLD = 15
 
 # OpenRouter API settings
 OPENROUTER_API_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Updated model to Meta: Llama 3.2 3B Instruct
 OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct"
 
-# --- Journal Entry Analysis ---
-def analyze_entry(entry: str) -> str:
+# Load the new classification system prompt
+CLASSIFICATION_SYSTEM_PROMPT_FILE = "classification_prompt.txt"
+try:
+    with open(CLASSIFICATION_SYSTEM_PROMPT_FILE, "r") as f:
+        CLASSIFICATION_SYSTEM_PROMPT = f.read()
+except FileNotFoundError:
+    print(f"Error: {CLASSIFICATION_SYSTEM_PROMPT_FILE} not found. Please ensure it exists.")
+    CLASSIFICATION_SYSTEM_PROMPT = "" # Fallback to empty if file not found
+
+# --- Journal Entry Analysis (Now AI-Powered) ---
+def analyze_entry(api_key: str, entry: str) -> str:
     """
-    Analyzes a journal entry for safety concerns, instructional intent,
+    Analyzes a journal entry using AI for safety concerns, instructional intent,
     quiet responses, or positive sentiment.
 
     Args:
+        api_key (str): Your OpenRouter API key.
         entry (str): The user's journal entry.
 
     Returns:
         str: A string indicating the outcome: "safety", "instruction", "quiet", or "positive".
+             Defaults to "quiet" if AI classification fails or is ambiguous.
     """
-    entry_lower = entry.strip().lower()
-    entry_length = len(entry.strip())
+    entry_stripped = entry.strip()
 
-    # 1. Check for safety red flags (highest priority)
-    if any(flag in entry_lower for flag in SAFETY_RED_FLAGS):
-        return "safety"
-
-    # 2. Check for instructional or technical content
-    if any(word in entry_lower for word in TECH_KEYWORDS) or \
-       any(phrase in entry_lower for phrase in INSTRUCTION_PHRASES):
-        return "instruction"
-
-    # 3. Check for exact quiet phrases OR if the entry is very short
-    if entry_lower in QUIET_RESPONSES or entry_length < SHORT_ENTRY_LENGTH_THRESHOLD:
+    if not entry_stripped: # Handle empty entries immediately without AI call
         return "quiet"
 
-    # 4. Perform sentiment analysis for general negative sentiment that might indicate safety
-    sentiment = analyzer.polarity_scores(entry)
-    if sentiment['compound'] < -0.3: # Strong negative sentiment
-        return "safety"
+    # Use AI to classify the entry's intent
+    messages = [
+        {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
+        {"role": "user", "content": entry_stripped}
+    ]
 
-    # 5. If sentiment is not clearly positive, route to 'quiet' for AI encouragement
-    if sentiment['compound'] <= 0.3: # If compound score is not greater than 0.3 (i.e., neutral or negative)
-        return "quiet"
+    try:
+        response_text = call_openrouter_api(api_key, messages)
+        if response_text:
+            # Attempt to parse the JSON response from the AI
+            response_json = json.loads(response_text)
+            category = response_json.get("category", "").lower()
 
-    # 6. If none of the above conditions are met, the entry is genuinely positive
-    return "positive"
+            if category in ["safety", "instruction", "quiet", "positive"]:
+                return category
+            else:
+                print(f"AI returned an unexpected category: {category}. Defaulting to 'quiet'.")
+                return "quiet" # Fallback for unexpected AI category
+        else:
+            print("AI classification response was empty. Defaulting to 'quiet'.")
+            return "quiet" # Fallback if AI call returns None
 
-# --- OpenRouter API Calls ---
+    except json.JSONDecodeError:
+        print(f"AI classification response was not valid JSON: {response_text}. Defaulting to 'quiet'.")
+        return "quiet" # Fallback for malformed JSON from AI
+    except Exception as e:
+        print(f"Error during AI classification: {e}. Defaulting to 'quiet'.")
+        return "quiet" # General fallback for any other error during classification
+
+# --- OpenRouter API Calls (remains the same) ---
 def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
     """
     Makes a call to the OpenRouter API with a list of messages.

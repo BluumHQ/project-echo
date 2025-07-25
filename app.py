@@ -12,6 +12,7 @@ st.title("🪴 Bluum Daily Reflection")
 # --- Constants and File Loading ---
 PROMPTS_FILE = os.path.join(os.path.dirname(__file__), "prompts.json")
 SYSTEM_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
+CLASSIFICATION_SYSTEM_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "system_prompt_for_classification.txt") # NEW
 
 try:
     with open(PROMPTS_FILE, "r") as f:
@@ -126,43 +127,25 @@ def handle_initial_submission():
     # Ensure reflection is not marked as concluded for a new submission
     st.session_state.current_reflection_concluded = False
 
-    outcome = analyze_entry(st.session_state.journal_entry_text)
+    with st.spinner("Analyzing your entry..."):
+        # Use AI-powered analyze_entry for classification
+        outcome = analyze_entry(api_key, st.session_state.journal_entry_text)
 
     if outcome == "safety":
-        with st.spinner("Checking for safety concerns..."):
-            ai_check = check_flag(
-                api_key,
-                "Does this sound like a mental health crisis? Reply 'yes' or 'no'.",
-                st.session_state.journal_entry_text
-            )
-        if ai_check and "yes" in ai_check.lower():
-            st.error("🚨 You're not alone — please talk to someone you trust or contact a professional. Here are some resources:")
-            st.markdown("""
-            * **Samaritans (UK):** Call 116 123 (free, 24/7) or email jo@samaritans.org
-            * **Shout (UK):** Text SHOUT to 85258 (free, 24/7 crisis text service)
-            * **NHS 111 (UK):** Call 111 for urgent medical advice (non-emergency)
-            * **Your local GP or mental health services**
-            """)
-            st.session_state.ai_initial_response = "" # No AI response for safety
-            set_app_state("entry_submitted") # Show resources, but don't proceed to follow-up directly with AI
-        else:
-            st.info("🫂 That sounded intense, but we can keep journaling. Here's what I think:")
-            # Use the actual journal entry for AI processing
-            get_ai_response_and_set_state(st.session_state.journal_entry_text)
+        st.error("🚨 Your entry contains sensitive content. You're not alone — please talk to someone you trust or contact a professional.")
+        st.markdown("""
+        * **Samaritans (UK):** Call 116 123 (free, 24/7) or email jo@samaritans.org
+        * **Shout (UK):** Text SHOUT to 85258 (free, 24/7 crisis text service)
+        * **NHS 111 (UK):** Call 111 for urgent medical advice (non-emergency)
+        * **Your local GP or mental health services**
+        """)
+        st.info("We prioritize your well-being. Please use these resources if you need support.") # Added info message
+        st.session_state.ai_initial_response = "" # Ensure no AI journaling response
+        set_app_state("entry_submitted") # Transition state to show resources, but not a follow-up form for journaling
     elif outcome == "instruction":
-        with st.spinner("Analyzing entry type..."):
-            ai_check = check_flag(
-                api_key,
-                "Is this a journaling entry or an instruction/technical prompt? Reply with 'journal' or 'instruction'.",
-                st.session_state.journal_entry_text
-            )
-        if ai_check and "instruction" in ai_check.lower():
-            st.warning("🤔 That looks like an instruction or tech request. Try expressing how you're feeling instead.")
-            st.session_state.ai_initial_response = "" # No AI response for instruction
-        else:
-            # Use the actual journal entry for AI processing
-            get_ai_response_and_set_state(st.session_state.journal_entry_text)
-        set_app_state("entry_submitted") # Always transition after initial check/response
+        st.warning("🤔 That looks like an instruction or tech request. Try expressing how you're feeling instead.")
+        st.session_state.ai_initial_response = "" # No AI response for instruction
+        set_app_state("entry_submitted") # Transition state
     elif outcome == "quiet":
         # For quiet entries, directly trigger the AI call with the crafted structured prompt
         structured_prompt_for_quiet_ai = {
@@ -171,15 +154,16 @@ def handle_initial_submission():
             "original_prompt_context": st.session_state.current_prompt,
             "response_constraints": {
                 "max_characters": 150,
-                "tone": "enthusiastic_cheerleader", # New tone
+                "tone": "empathetic_cheerleader", # Adjusted tone for quiet entries
                 "rules": [
-                    "Acknowledge the brevity of the entry with a high-energy, supportive phrase.",
-                    "Formulate a single, exciting, open-ended question that directly invites the user to explore their personal experience, feelings, or sensory details related to their brief entry.",
-                    "The question should encourage elaboration on 'what it was like', 'how it felt', or 'what specific aspect made it impactful' with a sense of wonder.",
-                    "Use exclamation marks and positive emojis (like ✨, 🚀, 🎉) to convey excitement.",
+                    "Acknowledge the user's entry kindly and empathetically, without false cheer if the content is neutral/negative.",
+                    "If the entry is neutral or negative, start with empathy (e.g., 'I hear you,' 'It's okay to feel that way').",
+                    "Formulate a single, open-ended question that directly invites the user to explore their personal experience, feelings, or sensory details related to their brief entry.",
+                    "The question should encourage elaboration on 'what it was like', 'how it felt', or 'what specific aspect made it impactful' with a sense of gentle wonder.",
+                    "Use emojis sparingly and only if truly appropriate for the sentiment of the user's brief entry. Avoid overly enthusiastic emojis for neutral/negative content.",
                     "Do NOT summarize or analyze the user's entry.",
                     "Do NOT ask yes/no questions.",
-                    "Keep the question direct, inviting, and focused on personal reflection, making it feel like a fun challenge."
+                    "Keep the question direct, inviting, and focused on personal reflection."
                 ]
             }
         }
@@ -218,12 +202,13 @@ def handle_followup_submission():
     # Ensure reflection is not marked as concluded for a new follow-up submission
     st.session_state.current_reflection_concluded = False
 
-    followup_outcome = analyze_entry(st.session_state.followup_entry_text)
+    with st.spinner("Analyzing your follow-up..."):
+        # Use AI-powered analyze_entry for classification
+        followup_outcome = analyze_entry(api_key, st.session_state.followup_entry_text)
 
     if followup_outcome == "positive":
-        # Updated success message and AI response for positive follow-up
-        st.success("🎉 YES! You totally nailed that reflection! High five! 🚀")
-        st.session_state.ai_followup_response = "Reflection concluded. You're crushing it! ✨" # A concluding message
+        st.success("✨ Excellent! Your reflection is insightful. Thank you for sharing your thoughts.")
+        st.session_state.ai_followup_response = "Reflection concluded. Thank you for your deep insights!"
         st.session_state.followup_entry_text = "" # Clear the text area for next potential entry
         st.session_state.error_message = "" # Clear any errors
         st.session_state.current_reflection_concluded = True # Mark as concluded
@@ -241,34 +226,36 @@ def handle_followup_submission():
             },
             "response_constraints": {
                 "max_characters": 150,
-                "tone": "enthusiastic_cheerleader", # New tone
+                "tone": "empathetic_cheerleader", # Adjusted tone for quiet entries
                 "rules": [
-                    "Acknowledge the brevity of the entry with a high-energy, supportive phrase.",
-                    "Formulate a single, exciting, open-ended question that directly invites the user to explore their personal experience, feelings, or sensory details related to their brief entry.",
-                    "The question should encourage elaboration on 'what it was like', 'how it felt', or 'what specific aspect made it impactful' with a sense of wonder.",
-                    "Use exclamation marks and positive emojis (like ✨, 🚀, 🎉) to convey excitement.",
+                    "Acknowledge the user's entry kindly and empathetically, without false cheer if the content is neutral/negative.",
+                    "If the entry is neutral or negative, start with empathy (e.g., 'I hear you,' 'It's okay to feel that way').",
+                    "Formulate a single, open-ended question that directly invites the user to explore their personal experience, feelings, or sensory details related to their brief entry.",
+                    "The question should encourage elaboration on 'what it was like', 'how it felt', or 'what specific aspect made it impactful' with a sense of gentle wonder.",
+                    "Use emojis sparingly and only if truly appropriate for the sentiment of the user's brief entry. Avoid overly enthusiastic emojis for neutral/negative content.",
                     "Do NOT summarize or analyze the user's entry.",
                     "Do NOT ask yes/no questions.",
-                    "Keep the question direct, inviting, and focused on personal reflection, making it feel like a fun challenge."
+                    "Keep the question direct, inviting, and focused on personal reflection."
                 ]
             }
         }
         get_ai_response_and_set_state(structured_prompt_for_quiet_followup_ai, is_followup=True)
     elif followup_outcome == "instruction":
-        st.warning("🤔 That looks like an instruction or tech request. Try focusing on your thoughts or feelings rather than giving an instruction for your follow-up.")
+        st.warning("🤔 That looks like an instruction or tech request. Try focusing on your thoughts or feelings instead.")
         st.session_state.ai_followup_response = "" # Clear previous AI follow-up if it was an instruction
         st.session_state.followup_entry_text = "" # Clear the text area
         st.session_state.current_reflection_concluded = False # Ensure it's not concluded
         set_app_state("entry_submitted") # Stay in entry_submitted to prompt for new follow-up
         st.rerun() # Force rerun to update UI
     elif followup_outcome == "safety":
-        st.error("🚨 Your follow-up sounds concerning. You're not alone — please talk to someone you trust or contact a professional. Here are some resources:")
+        st.error("🚨 Your follow-up contains sensitive content. You're not alone — please talk to someone you trust or contact a professional.")
         st.markdown("""
         * **Samaritans (UK):** Call 116 123 (free, 24/7) or email jo@samaritans.org
         * **Shout (UK):** Text SHOUT to 85258 (free, 24/7 crisis text service)
         * **NHS 111 (UK):** Call 111 for urgent medical advice (non-emergency)
         * **Your local GP or mental health services**
         """)
+        st.info("We prioritize your well-being. Please use these resources if you need support.") # Added info message
         st.session_state.ai_followup_response = "" # No AI response for safety
         st.session_state.followup_entry_text = "" # Clear the text area
         st.session_state.current_reflection_concluded = False # Ensure it's not concluded

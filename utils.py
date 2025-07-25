@@ -19,7 +19,7 @@ SHORT_ENTRY_LENGTH_THRESHOLD = 15 # Entries shorter than this (excluding leading
 
 # OpenRouter API settings
 OPENROUTER_API_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Updated model to Meta: Llama 3.2 3B Instruct 
+# Updated model to Meta: Llama 3.2 3B Instruct
 OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct"
 
 # --- Journal Entry Analysis ---
@@ -37,26 +37,30 @@ def analyze_entry(entry: str) -> str:
     entry_lower = entry.strip().lower()
     entry_length = len(entry.strip())
 
-    # Check for safety red flags first, as this is the most critical
+    # 1. Check for safety red flags (highest priority)
     if any(flag in entry_lower for flag in SAFETY_RED_FLAGS):
         return "safety"
 
-    # Check for instructional or technical content
+    # 2. Check for instructional or technical content
     if any(word in entry_lower for word in TECH_KEYWORDS) or \
        any(phrase in entry_lower for phrase in INSTRUCTION_PHRASES):
         return "instruction"
 
-    # Check for exact quiet phrases OR if the entry is very short and not caught by other flags
+    # 3. Check for exact quiet phrases OR if the entry is very short
     if entry_lower in QUIET_RESPONSES or entry_length < SHORT_ENTRY_LENGTH_THRESHOLD:
         return "quiet"
 
-    # Perform sentiment analysis for general negative sentiment
+    # 4. Perform sentiment analysis for general negative sentiment that might indicate safety
     sentiment = analyzer.polarity_scores(entry)
-    # If compound score is very negative, it might indicate a safety concern not caught by keywords
-    if sentiment['compound'] < -0.3:
+    if sentiment['compound'] < -0.3: # Strong negative sentiment
         return "safety"
 
-    return "positive" # Default to positive if no other flags are triggered
+    # 5. If sentiment is not clearly positive, route to 'quiet' for AI encouragement
+    if sentiment['compound'] <= 0.3: # If compound score is not greater than 0.3 (i.e., neutral or negative)
+        return "quiet"
+
+    # 6. If none of the above conditions are met, the entry is genuinely positive
+    return "positive"
 
 # --- OpenRouter API Calls ---
 def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
@@ -66,6 +70,7 @@ def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
     Args:
         api_key (str): Your OpenRouter API key.
         messages (list): A list of message dictionaries (e.g., [{"role": "system", "content": "..."}]).
+                         The 'content' field can now be a string or a JSON-serializable dictionary.
 
     Returns:
         str | None: The content of the AI's response message, or None if an error occurs.
@@ -73,6 +78,17 @@ def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
     if not api_key:
         print("Error: OpenRouter API key is missing.")
         return None
+
+    # Ensure messages content is correctly formatted (string or JSON string)
+    formatted_messages = []
+    for msg in messages:
+        if isinstance(msg['content'], dict):
+            formatted_messages.append({
+                "role": msg['role'],
+                "content": json.dumps(msg['content']) # Convert dict content to JSON string
+            })
+        else:
+            formatted_messages.append(msg) # Keep string content as is
 
     try:
         response = requests.post(
@@ -83,7 +99,7 @@ def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
             },
             json={
                 "model": OPENROUTER_MODEL,
-                "messages": messages
+                "messages": formatted_messages # Use the formatted messages
             },
             timeout=45 # Increased timeout slightly for potentially longer responses
         )
@@ -113,13 +129,14 @@ def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
         return None
 
 # --- Specific API Call Wrappers (for clarity in app.py) ---
-def get_journal_response(api_key: str, system_prompt: str, user_entry: str) -> Union[str, None]:
+def get_journal_response(api_key: str, system_prompt: str, user_entry: Union[str, dict]) -> Union[str, None]:
     """
     Calls OpenRouter to get a journaling assistant response.
+    User entry can now be a string or a dictionary for structured input.
     """
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"User wrote: {user_entry}"}
+        {"role": "user", "content": user_entry} # user_entry can now be dict or string
     ]
     return call_openrouter_api(api_key, messages)
 
@@ -132,4 +149,3 @@ def check_flag(api_key: str, system_prompt_flag: str, user_entry: str) -> Union[
         {"role": "user", "content": user_entry}
     ]
     return call_openrouter_api(api_key, messages)
-

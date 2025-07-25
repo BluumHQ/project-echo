@@ -3,6 +3,7 @@ import streamlit as st
 import json
 import os
 from utils import analyze_entry, get_journal_response, check_flag
+from typing import Union # Import Union for type hinting
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(page_title="Bluum Journal", layout="centered")
@@ -54,6 +55,8 @@ if "current_prompt" not in st.session_state:
     st.session_state.current_prompt = PROMPTS[st.session_state.mood_selected][0]
 if "error_message" not in st.session_state: # General error message for API issues
     st.session_state.error_message = ""
+if "current_reflection_concluded" not in st.session_state: # NEW: Flag to explicitly track if reflection chain is concluded
+    st.session_state.current_reflection_concluded = False
 
 # --- Helper Functions for State Transitions and Actions ---
 def set_app_state(state: str):
@@ -67,7 +70,8 @@ def reset_app():
     """Resets all session state variables to restart the application."""
     keys_to_reset = [
         "app_state", "journal_entry_text", "ai_initial_response",
-        "followup_entry_text", "ai_followup_response", "error_message"
+        "followup_entry_text", "ai_followup_response", "error_message",
+        "current_reflection_concluded" # Reset this flag too
     ]
     for key in keys_to_reset:
         if key in st.session_state:
@@ -81,29 +85,21 @@ def reset_app():
     st.session_state.mood_selected = list(PROMPTS.keys())[0]
     st.session_state.current_prompt = PROMPTS[st.session_state.mood_selected][0]
     st.session_state.error_message = ""
+    st.session_state.current_reflection_concluded = False # Ensure it's reset
     st.rerun() # Force a rerun to clear the UI
 
-def get_ai_response_and_set_state(user_input_for_ai: str, is_followup: bool = False):
+def get_ai_response_and_set_state(user_input_for_ai: Union[str, dict], is_followup: bool = False):
     """
     Fetches AI response and updates the appropriate session state variable.
     Handles general AI responses and follow-up responses.
     The `user_input_for_ai` is the content that goes into the 'user' role of the API call.
+    It can now be a string or a dictionary for structured input.
     """
     st.session_state.error_message = "" # Clear previous errors
     response_target_key = "ai_followup_response" if is_followup else "ai_initial_response"
     
     with st.spinner("Generating response..."):
-        # For follow-up, provide full context in the user message
-        if is_followup:
-            full_context_user_message = (
-                f"Original Prompt: {st.session_state.current_prompt}\n"
-                f"Original Entry: {st.session_state.journal_entry_text}\n"
-                f"Follow-up Reflection: {user_input_for_ai}" # user_input_for_ai is the actual followup text here
-            )
-            response = get_journal_response(api_key, SYSTEM_PROMPT, full_context_user_message)
-        else:
-            # For initial entries (including 'quiet' where user_input_for_ai is a crafted prompt)
-            response = get_journal_response(api_key, SYSTEM_PROMPT, user_input_for_ai)
+        response = get_journal_response(api_key, SYSTEM_PROMPT, user_input_for_ai)
 
     if response:
         st.session_state[response_target_key] = response
@@ -126,6 +122,9 @@ def handle_initial_submission():
     if not st.session_state.journal_entry_text.strip():
         st.warning("Please write something before submitting.")
         return
+
+    # Ensure reflection is not marked as concluded for a new submission
+    st.session_state.current_reflection_concluded = False
 
     outcome = analyze_entry(st.session_state.journal_entry_text)
 
@@ -165,23 +164,48 @@ def handle_initial_submission():
             get_ai_response_and_set_state(st.session_state.journal_entry_text)
         set_app_state("entry_submitted") # Always transition after initial check/response
     elif outcome == "quiet":
-        # For quiet entries, directly trigger the AI call with the crafted prompt
-        # No need for an intermediate st.info message here, the AI response will be the primary feedback.
-        prompt_for_quiet_ai = (
-            f"The user's journal entry was very short: '{st.session_state.journal_entry_text}'. "
-            f"Your original prompt was: '{st.session_state.current_prompt}'. "
-            "Please provide a gentle, encouraging response that helps the user elaborate or delve deeper into their initial thought. "
-            "Do NOT summarize or analyze, just prompt for more detail. Focus on encouraging them to expand on their brief entry."
-        )
-        # Pass this crafted prompt as the user_input_for_ai
-        get_ai_response_and_set_state(prompt_for_quiet_ai)
-        # The state will be set to 'entry_submitted' within get_ai_response_and_set_state upon success, followed by rerun.
+        # For quiet entries, directly trigger the AI call with the crafted structured prompt
+        structured_prompt_for_quiet_ai = {
+            "task": "encourage_elaboration",
+            "user_entry_content": st.session_state.journal_entry_text,
+            "original_prompt_context": st.session_state.current_prompt,
+            "response_constraints": {
+                "max_characters": 150,
+                "tone": "enthusiastic_cheerleader", # New tone
+                "rules": [
+                    "Acknowledge the brevity of the entry with a high-energy, supportive phrase.",
+                    "Formulate a single, exciting, open-ended question that directly invites the user to explore their personal experience, feelings, or sensory details related to their brief entry.",
+                    "The question should encourage elaboration on 'what it was like', 'how it felt', or 'what specific aspect made it impactful' with a sense of wonder.",
+                    "Use exclamation marks and positive emojis (like ✨, 🚀, 🎉) to convey excitement.",
+                    "Do NOT summarize or analyze the user's entry.",
+                    "Do NOT ask yes/no questions.",
+                    "Keep the question direct, inviting, and focused on personal reflection, making it feel like a fun challenge."
+                ]
+            }
+        }
+        get_ai_response_and_set_state(structured_prompt_for_quiet_ai)
     elif outcome == "positive":
-        # For positive entries, just display a thank you message, no AI call needed
-        st.success("🎉 Thank you for sharing your thoughts! We appreciate your positive reflection.")
-        st.session_state.ai_initial_response = "Thank you for sharing your thoughts! We appreciate your positive reflection."
-        set_app_state("entry_submitted")
-        st.rerun() # Force a rerun to display the thank you message immediately
+        # For positive entries, now also send to AI for a personalized, brief acknowledgment
+        structured_prompt_for_positive_ai = {
+            "task": "acknowledge_positive_entry",
+            "user_entry_content": st.session_state.journal_entry_text,
+            "original_prompt_context": st.session_state.current_prompt,
+            "response_constraints": {
+                "max_characters": 100,
+                "tone": "enthusiastic_celebratory", # New tone
+                "rules": [
+                    "Start with an immediate, high-energy celebration (e.g., 'YES!', 'Awesome!', 'High Five!').",
+                    "Acknowledge something specific from the user's entry with genuine excitement.",
+                    "Express sincere appreciation in a vibrant way.",
+                    "Use exclamation marks and positive emojis (like 🎉, ✨, 🚀).",
+                    "Do NOT ask follow-up questions.",
+                    "Keep it very brief and impactful (1-2 sentences)."
+                ]
+            }
+        }
+        get_ai_response_and_set_state(structured_prompt_for_positive_ai)
+        # Mark as concluded since a positive initial entry means no further AI-guided reflection is needed for this chain
+        st.session_state.current_reflection_concluded = True
 
 
 def handle_followup_submission():
@@ -191,29 +215,50 @@ def handle_followup_submission():
         st.warning("Please write something for your follow-up.")
         return
 
+    # Ensure reflection is not marked as concluded for a new follow-up submission
+    st.session_state.current_reflection_concluded = False
+
     followup_outcome = analyze_entry(st.session_state.followup_entry_text)
 
     if followup_outcome == "positive":
-        st.success("✨ Excellent! Your reflection is insightful. Thank you for sharing your thoughts.")
-        st.session_state.ai_followup_response = "Reflection concluded. Thank you for your deep insights!" # A concluding message
+        # Updated success message and AI response for positive follow-up
+        st.success("🎉 YES! You totally nailed that reflection! High five! 🚀")
+        st.session_state.ai_followup_response = "Reflection concluded. You're crushing it! ✨" # A concluding message
         st.session_state.followup_entry_text = "" # Clear the text area for next potential entry
         st.session_state.error_message = "" # Clear any errors
+        st.session_state.current_reflection_concluded = True # Mark as concluded
         set_app_state("entry_submitted") # Revert to entry_submitted state to hide the follow-up form
         st.rerun() # Force rerun to update UI
     elif followup_outcome == "quiet":
-        # Still encourage deeper reflection for quiet follow-ups
-        prompt_for_quiet_followup_ai = (
-            f"The user's follow-up reflection was very short: '{st.session_state.followup_entry_text}'. "
-            f"Original Prompt: {st.session_state.current_prompt}\n"
-            f"Original Entry: {st.session_state.journal_entry_text}\n"
-            "Please provide a gentle, encouraging response that helps the user elaborate or delve deeper into their follow-up thought. "
-            "Do NOT summarize or analyze, just prompt for more detail. Focus on encouraging them to expand on their brief entry."
-        )
-        get_ai_response_and_set_state(prompt_for_quiet_followup_ai, is_followup=True)
+        # Still encourage deeper reflection for quiet follow-ups, now using structured input
+        structured_prompt_for_quiet_followup_ai = {
+            "task": "encourage_elaboration_followup",
+            "user_followup_entry_content": st.session_state.followup_entry_text,
+            "original_context": {
+                "original_prompt": st.session_state.current_prompt,
+                "initial_entry": st.session_state.journal_entry_text,
+                "initial_ai_response": st.session_state.ai_initial_response
+            },
+            "response_constraints": {
+                "max_characters": 150,
+                "tone": "enthusiastic_cheerleader", # New tone
+                "rules": [
+                    "Acknowledge the brevity of the entry with a high-energy, supportive phrase.",
+                    "Formulate a single, exciting, open-ended question that directly invites the user to explore their personal experience, feelings, or sensory details related to their brief entry.",
+                    "The question should encourage elaboration on 'what it was like', 'how it felt', or 'what specific aspect made it impactful' with a sense of wonder.",
+                    "Use exclamation marks and positive emojis (like ✨, 🚀, 🎉) to convey excitement.",
+                    "Do NOT summarize or analyze the user's entry.",
+                    "Do NOT ask yes/no questions.",
+                    "Keep the question direct, inviting, and focused on personal reflection, making it feel like a fun challenge."
+                ]
+            }
+        }
+        get_ai_response_and_set_state(structured_prompt_for_quiet_followup_ai, is_followup=True)
     elif followup_outcome == "instruction":
         st.warning("🤔 That looks like an instruction or tech request. Try focusing on your thoughts or feelings rather than giving an instruction for your follow-up.")
         st.session_state.ai_followup_response = "" # Clear previous AI follow-up if it was an instruction
         st.session_state.followup_entry_text = "" # Clear the text area
+        st.session_state.current_reflection_concluded = False # Ensure it's not concluded
         set_app_state("entry_submitted") # Stay in entry_submitted to prompt for new follow-up
         st.rerun() # Force rerun to update UI
     elif followup_outcome == "safety":
@@ -226,6 +271,7 @@ def handle_followup_submission():
         """)
         st.session_state.ai_followup_response = "" # No AI response for safety
         st.session_state.followup_entry_text = "" # Clear the text area
+        st.session_state.current_reflection_concluded = False # Ensure it's not concluded
         set_app_state("entry_submitted") # Stay in entry_submitted to prompt for new follow-up
         st.rerun() # Force rerun to update UI
 
@@ -283,15 +329,7 @@ elif st.session_state.app_state in ["entry_submitted", "followup_submitted"]:
         st.write(st.session_state.ai_followup_response)
 
     # Show the follow-up section only if the current reflection chain is NOT concluded
-    # A reflection chain is concluded if:
-    # 1. The initial response was the "Thank you..." message (for positive initial entries).
-    # 2. The follow-up response is the "Reflection concluded..." message (for positive follow-up entries).
-    reflection_concluded = (
-        st.session_state.ai_initial_response == "Thank you for sharing your thoughts! We appreciate your positive reflection." or
-        st.session_state.ai_followup_response == "Reflection concluded. Thank you for your deep insights!"
-    )
-
-    if not reflection_concluded:
+    if not st.session_state.current_reflection_concluded:
         st.markdown("---")
         st.markdown("#### 📝 Let's go deeper?")
         with st.form("followup_form"):
@@ -309,4 +347,3 @@ elif st.session_state.app_state in ["entry_submitted", "followup_submitted"]:
 st.markdown("---")
 # Button to start a new entry (always visible, outside any form)
 st.button("🔄 Start New Entry", on_click=reset_app, key="reset_button")
-

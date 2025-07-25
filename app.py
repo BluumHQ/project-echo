@@ -12,7 +12,7 @@ st.title("🪴 Bluum Daily Reflection")
 # --- Constants and File Loading ---
 PROMPTS_FILE = os.path.join(os.path.dirname(__file__), "prompts.json")
 SYSTEM_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
-CLASSIFICATION_SYSTEM_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "system_prompt_for_classification.txt") # NEW
+CLASSIFICATION_SYSTEM_PROMPT_FILE = os.path.join(os.path.dirname(__file__), "classification_prompt.txt") # NEW
 
 try:
     with open(PROMPTS_FILE, "r") as f:

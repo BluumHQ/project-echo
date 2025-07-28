@@ -2,10 +2,17 @@
 import requests
 import json
 import os
+import streamlit as st
 from thefuzz import fuzz
 from typing import Union
 from datetime import datetime
 import csv
+from supabase import create_client, Client
+
+# --- Supabase Configuration ---
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Constants ---
 SAFETY_RED_FLAGS = [
@@ -35,6 +42,19 @@ def log_to_csv(prompt, entry, category, response_text, safety_flagged):
             "response_text": response_text,
             "safety_flagged": safety_flagged
         })
+
+def log_to_supabase(prompt, entry, category, response_text, safety_flagged):
+    try:
+        supabase.table("logs").insert({
+            "timestamp": datetime.now().isoformat(),
+            "prompt": prompt,
+            "entry": entry,
+            "category": category,
+            "response_text": response_text,
+            "safety_flagged": safety_flagged
+        }).execute()
+    except Exception as e:
+        print("❌ Supabase logging failed:", e)
 
         
 # OpenRouter API settings
@@ -68,6 +88,13 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
         similarity = fuzz.partial_ratio(entry_stripped, red_flag)
         if similarity >= FUZZY_MATCH_THRESHOLD:
             log_to_csv(
+                prompt=prompt, 
+                entry=entry, 
+                category="safety", 
+                response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
+                safety_flagged=True
+            )
+            log_to_supabase(
                 prompt=prompt, 
                 entry=entry, 
                 category="safety", 
@@ -114,6 +141,7 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
             cleaned = cleaned[:-3].strip()
 
         parsed = json.loads(cleaned)
+
         log_to_csv(
             prompt=prompt, 
             entry=entry, 
@@ -121,10 +149,19 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
         )
+        log_to_supabase(
+            prompt=prompt, 
+            entry=entry, 
+            category=parsed.get("category", "unknown"), 
+            response_text=parsed.get("response_text", ""),
+            safety_flagged=False
+        )
+
         return parsed
 
     except Exception as e:
         print(f"Error parsing AI response: {e}")
+
         log_to_csv(
             prompt=prompt, 
             entry=entry, 
@@ -132,6 +169,14 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
             response_text="Parsing error.",
             safety_flagged=False
         )
+        log_to_supabase(
+            prompt=prompt, 
+            entry=entry, 
+            category="unclear", 
+            response_text="Parsing error.",
+            safety_flagged=False
+        )
+        
         return {"category": "unclear", "response_text": "Parsing error."}
 
 # --- OpenRouter API Helper ---

@@ -37,12 +37,12 @@ if st.button("Submit"):
 # --- Display Response ---
 if st.session_state.submitted and st.session_state.response:
     category = st.session_state.response.get("category")
-    response_text = st.session_state.response.get("response_text")
+    response_text = st.session_state.response.get("response_text", "").strip()
 
     if category == "safety":
         st.error(response_text)
         st.info("If you're struggling, please reach out to someone you trust or seek professional help.")
-    elif category == "unclear":
+    elif category == "unclear" and not response_text:
         st.warning("Hmm, we couldn't quite understand that. Try again?")
     else:
         st.success(response_text)

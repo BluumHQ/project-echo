@@ -15,6 +15,9 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Constants ---
+SYSTEM_PROMPT_VERSION = "v1.0"
+USER_PROMPT_VERSION = "v1.0"
+
 SAFETY_RED_FLAGS = [
     "end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless",
     "despair", "give up", "death", "die", "harm myself", "self harm", "unalive",
@@ -51,7 +54,9 @@ def log_to_supabase(prompt, entry, category, response_text, safety_flagged):
             "entry": entry,
             "category": category,
             "response_text": response_text,
-            "safety_flagged": safety_flagged
+            "safety_flagged": safety_flagged,
+            "system_prompt_version": SYSTEM_PROMPT_VERSION,
+            "user_prompt_version": USER_PROMPT_VERSION
         }).execute()
     except Exception as e:
         print("❌ Supabase logging failed:", e)

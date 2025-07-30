@@ -36,7 +36,7 @@ def log_to_csv(prompt, entry, category, response_text, safety_flagged):
         log_writer = csv.DictWriter(log_file, fieldnames=fieldnames)
         if log_file.tell() == 0:  # Check if file is empty
             log_writer.writeheader()  # Write header only if file is empty
-        
+
         log_writer.writerow({
             "timestamp": datetime.now().isoformat(),
             "prompt": prompt,
@@ -46,7 +46,7 @@ def log_to_csv(prompt, entry, category, response_text, safety_flagged):
             "safety_flagged": safety_flagged
         })
 
-def log_to_supabase(prompt, entry, category, response_text, safety_flagged):
+def log_to_supabase(session_id, prompt, entry, category, response_text, safety_flagged):
     try:
         supabase.table("logs").insert({
             "timestamp": datetime.now().isoformat(),
@@ -56,12 +56,13 @@ def log_to_supabase(prompt, entry, category, response_text, safety_flagged):
             "response_text": response_text,
             "safety_flagged": safety_flagged,
             "system_prompt_version": SYSTEM_PROMPT_VERSION,
-            "user_prompt_version": USER_PROMPT_VERSION
+            "user_prompt_version": USER_PROMPT_VERSION,
+            "session_id": session_id
         }).execute()
     except Exception as e:
         print("❌ Supabase logging failed:", e)
 
-        
+
 # OpenRouter API settings
 OPENROUTER_API_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct"
@@ -85,7 +86,7 @@ except FileNotFoundError:
     USER_PROMPT_TEMPLATE = ""
 
 # --- Main Classifier + Response Generator ---
-def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
+def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str) -> dict:
     entry_stripped = entry.strip().lower()
 
     # Fuzzy match against safety keywords before API call
@@ -93,16 +94,17 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
         similarity = fuzz.partial_ratio(entry_stripped, red_flag)
         if similarity >= FUZZY_MATCH_THRESHOLD:
             log_to_csv(
-                prompt=prompt, 
-                entry=entry, 
-                category="safety", 
+                prompt=prompt,
+                entry=entry,
+                category="safety",
                 response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
                 safety_flagged=True
             )
             log_to_supabase(
-                prompt=prompt, 
-                entry=entry, 
-                category="safety", 
+                session_id=session_id,
+                prompt=prompt,
+                entry=entry,
+                category="safety",
                 response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
                 safety_flagged=True
             )
@@ -148,16 +150,17 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
         parsed = json.loads(cleaned)
 
         log_to_csv(
-            prompt=prompt, 
-            entry=entry, 
-            category=parsed.get("category", "unknown"), 
+            prompt=prompt,
+            entry=entry,
+            category=parsed.get("category", "unknown"),
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
         )
         log_to_supabase(
-            prompt=prompt, 
-            entry=entry, 
-            category=parsed.get("category", "unknown"), 
+            session_id=session_id,
+            prompt=prompt,
+            entry=entry,
+            category=parsed.get("category", "unknown"),
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
         )
@@ -168,20 +171,21 @@ def classify_and_respond(api_key: str, prompt: str, entry: str) -> dict:
         print(f"Error parsing AI response: {e}")
 
         log_to_csv(
-            prompt=prompt, 
-            entry=entry, 
-            category="unclear", 
+            prompt=prompt,
+            entry=entry,
+            category="unclear",
             response_text="Parsing error.",
             safety_flagged=False
         )
         log_to_supabase(
-            prompt=prompt, 
-            entry=entry, 
-            category="unclear", 
+            session_id=session_id,
+            prompt=prompt,
+            entry=entry,
+            category="unclear",
             response_text="Parsing error.",
             safety_flagged=False
         )
-        
+
         return {"category": "unclear", "response_text": "Parsing error."}
 
 # --- OpenRouter API Helper ---

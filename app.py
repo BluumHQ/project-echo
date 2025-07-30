@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import uuid
 from utils import classify_and_respond
 
 # --- Streamlit Page Settings ---
@@ -7,6 +8,10 @@ st.set_page_config(page_title="Bluum Journal", page_icon="🌸", layout="centere
 st.title("🌸 Bluum Journal")
 
 # --- Session State Initialization ---
+
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
 if "entry" not in st.session_state:
     st.session_state.entry = ""
 
@@ -15,6 +20,9 @@ if "response" not in st.session_state:
 
 if "submitted" not in st.session_state:
     st.session_state.submitted = False
+
+# Display the session ID
+st.code(st.session_state.session_id)
 
 # --- Prompt of the Day ---
 current_prompt = "What made you smile today?"
@@ -32,7 +40,7 @@ if not api_key:
 # --- Submit Logic ---
 if st.button("Submit"):
     st.session_state.submitted = True
-    st.session_state.response = classify_and_respond(api_key, current_prompt, entry)
+    st.session_state.response = classify_and_respond(api_key, st.session_state.session_id, current_prompt, entry)
 
 # --- Display Response ---
 if st.session_state.submitted and st.session_state.response:
@@ -53,4 +61,3 @@ if st.button("Start Over"):
     st.session_state.response = None
     st.session_state.submitted = False
     st.rerun()
-

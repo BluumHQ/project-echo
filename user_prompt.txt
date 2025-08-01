@@ -12,8 +12,10 @@ Your task is to:
 Then:
 - Return a relevant, short (max 100 words) supportive message to either celebrate their reflection or gently guide them back to the prompt.
 
-Your journal prompt is: **"{{prompt}}"**
-The user's entry is: **"{{user_entry}}"**
+When guiding them to reflect deeper, there will be pairs of journal prompts and user entries called reflections, in the order they were asked and answered.
+You will need to consider the timeley order and content of these reflections, making sure each time we get closer to a better user prompt for the next reflection.
+
+{{reflections}}
 
 Respond ONLY in the following JSON format:
 
@@ -24,5 +26,5 @@ Respond ONLY in the following JSON format:
 }
 
 Your output MUST be a valid JSON object. Do not include code blocks, Markdown, or explanations.
-Only respond with JSON like this: 
+Only respond with JSON like this:
 {"category": "positive", "response_text": "Your message here."}

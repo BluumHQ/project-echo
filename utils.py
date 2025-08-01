@@ -16,7 +16,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Constants ---
 SYSTEM_PROMPT_VERSION = "v1.0"
-USER_PROMPT_VERSION = "v1.0"
+USER_PROMPT_VERSION = "v1.0-d-session"
 
 SAFETY_RED_FLAGS = [
     "end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless",
@@ -86,16 +86,17 @@ except FileNotFoundError:
     USER_PROMPT_TEMPLATE = ""
 
 # --- Main Classifier + Response Generator ---
-def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str) -> dict:
-    entry_stripped = entry.strip().lower()
+def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conversation: dict[int, str]) -> dict:
+    last_prompt_index = len(prompts) - 1
+    last_entry = conversation[last_prompt_index]
 
     # Fuzzy match against safety keywords before API call
     for red_flag in SAFETY_RED_FLAGS:
-        similarity = fuzz.partial_ratio(entry_stripped, red_flag)
+        similarity = fuzz.partial_ratio(last_entry.lower(), red_flag)
         if similarity >= FUZZY_MATCH_THRESHOLD:
             log_to_csv(
                 prompt=prompt,
-                entry=entry,
+                entry=last_entry,
                 category="safety",
                 response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
                 safety_flagged=True
@@ -103,7 +104,7 @@ def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str)
             log_to_supabase(
                 session_id=session_id,
                 prompt=prompt,
-                entry=entry,
+                entry=last_entry,
                 category="safety",
                 response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
                 safety_flagged=True
@@ -119,12 +120,17 @@ def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str)
     if not SYSTEM_PROMPT or not USER_PROMPT_TEMPLATE:
         return {"category": "unclear", "response_text": "Missing prompt templates."}
 
-    # Build user prompt
+    # Build reflections
+    reflections = ""
+    for index, prompt in enumerate(prompts):
+        reflections += f"Reflection #{index+1}. " + f"Your journal prompt is: **\"{prompt.strip()}\"**."  + f"The user's entry is: **\"{conversation[index]}\"**\n"
+
     user_prompt = (
         USER_PROMPT_TEMPLATE
-        .replace("{{prompt}}", prompt.strip())
-        .replace("{{user_entry}}", entry.strip())
+        .replace("{{reflections}}", reflections.strip())
     )
+
+    print(reflections)
 
     # Construct and send to OpenRouter
     messages = [
@@ -151,7 +157,7 @@ def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str)
 
         log_to_csv(
             prompt=prompt,
-            entry=entry,
+            entry=last_entry,
             category=parsed.get("category", "unknown"),
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
@@ -159,7 +165,7 @@ def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str)
         log_to_supabase(
             session_id=session_id,
             prompt=prompt,
-            entry=entry,
+            entry=last_entry,
             category=parsed.get("category", "unknown"),
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
@@ -172,7 +178,7 @@ def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str)
 
         log_to_csv(
             prompt=prompt,
-            entry=entry,
+            entry=last_entry,
             category="unclear",
             response_text="Parsing error.",
             safety_flagged=False
@@ -180,7 +186,7 @@ def classify_and_respond(api_key: str, session_id: str, prompt: str, entry: str)
         log_to_supabase(
             session_id=session_id,
             prompt=prompt,
-            entry=entry,
+            entry=last_entry,
             category="unclear",
             response_text="Parsing error.",
             safety_flagged=False

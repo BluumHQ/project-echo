@@ -2,7 +2,9 @@ import streamlit as st
 import os
 import uuid
 import logging
-from utils import classify_and_respond
+import subprocess
+
+from utils import classify_and_respond, get_version_info
 
 logging.basicConfig(level=logging.INFO)
 
@@ -36,9 +38,6 @@ if "submitted" not in st.session_state:
 
 if "entry" not in st.session_state:
     st.session_state.entry = ""
-
-# Display the session ID
-st.code(st.session_state.session_id)
 
 # --- Prompt of the Day ---
 current_prompt = "What made you smile today?"
@@ -80,3 +79,6 @@ if st.session_state.submitted and st.session_state.response:
 if st.button("Start Over"):
     st.session_state.reset = True
     st.rerun()  # Reset the session state and rerun the app
+
+# Print versions info at the bottom for reference
+get_version_info(st.session_state.session_id)

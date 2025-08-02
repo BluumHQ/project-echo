@@ -3,6 +3,7 @@ import requests
 import json
 import os
 import streamlit as st
+import subprocess
 from thefuzz import fuzz
 from typing import Union
 from datetime import datetime
@@ -16,7 +17,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Constants ---
 SYSTEM_PROMPT_VERSION = "v1.0"
-USER_PROMPT_VERSION = "v1.0-d-session"
+USER_PROMPT_VERSION = "v1.0-session"
 
 SAFETY_RED_FLAGS = [
     "end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless",
@@ -218,3 +219,8 @@ def call_openrouter_api(api_key: str, messages: list) -> Union[str, None]:
     except Exception as e:
         print(f"API error: {e}")
         return None
+
+
+def get_version_info(session_id: str):
+    commit = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('utf-8').strip()
+    st.caption(f"{SYSTEM_PROMPT_VERSION} 🔸 {USER_PROMPT_VERSION} 🔸 {commit} 🔸 {session_id}")

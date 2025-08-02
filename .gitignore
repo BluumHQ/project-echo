@@ -1,2 +1,4 @@
 .streamlit/secrets.toml
 logs/
+__pycache__/
+*.py[cod]

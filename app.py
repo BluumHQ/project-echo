@@ -10,6 +10,13 @@ logging.basicConfig(level=logging.INFO)
 st.set_page_config(page_title="Bluum Journal", page_icon="🌸", layout="centered")
 st.title("🌸 Bluum Journal")
 
+# --- Reset Session State ---
+if "reset" in st.session_state and st.session_state.reset:
+    for key in ["entry", "response", "prompts", "conversation", "submitted"]:
+        st.session_state.pop(key, None)
+    st.session_state.reset = False
+    st.rerun() # Reset the session state if requested
+
 # --- Session State Initialization ---
 
 if 'session_id' not in st.session_state:
@@ -26,6 +33,9 @@ if "response" not in st.session_state:
 
 if "submitted" not in st.session_state:
     st.session_state.submitted = False
+
+if "entry" not in st.session_state:
+    st.session_state.entry = ""
 
 # Display the session ID
 st.code(st.session_state.session_id)
@@ -68,7 +78,5 @@ if st.session_state.submitted and st.session_state.response:
 
 # --- Start Over Button ---
 if st.button("Start Over"):
-    st.session_state.entry = ""
-    st.session_state.response = None
-    st.session_state.submitted = False
-    st.rerun()
+    st.session_state.reset = True
+    st.rerun()  # Reset the session state and rerun the app

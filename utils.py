@@ -16,8 +16,8 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Constants ---
-SYSTEM_PROMPT_VERSION = "v1.0"
-USER_PROMPT_VERSION = "v1.0-session"
+SYSTEM_PROMPT_VERSION = "v2.1"
+USER_PROMPT_VERSION = "v2.2-session"
 
 SAFETY_RED_FLAGS = [
     "end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless",
@@ -99,7 +99,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
                 prompt=prompt,
                 entry=last_entry,
                 category="safety",
-                response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
+                response_text="🚨 That sounds heavy. If you're really struggling, please reach out to someone you trust or a crisis helpline. You're not alone in this. ❤️",
                 safety_flagged=True
             )
             log_to_supabase(
@@ -107,13 +107,13 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
                 prompt=prompt,
                 entry=last_entry,
                 category="safety",
-                response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
+                response_text="🚨 That sounds heavy. If you're really struggling, please reach out to someone you trust or a crisis helpline. You're not alone in this. ❤️",
                 safety_flagged=True
             )
             return {
                 "category": "safety",
                 "response_text": (
-                    "🚨 You mentioned something serious. Please talk to someone you trust or reach out for support."
+                    "🚨 That sounds heavy. If you're really struggling, please reach out to someone you trust or a crisis helpline. You're not alone in this. ❤️"
                 )
             }
 
@@ -141,7 +141,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
 
     raw_response = call_openrouter_api(api_key, messages)
     if not raw_response:
-        return {"category": "unclear", "response_text": "Couldn’t reach the AI."}
+        return {"category": "unclear", "response_text": "My wires are doing the cha-cha, bestie! 😵‍💫 Couldn't reach the AI. Try again?"}
 
     try:
         cleaned = raw_response.strip("` \n")
@@ -181,7 +181,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
             prompt=prompt,
             entry=last_entry,
             category="unclear",
-            response_text="Parsing error.",
+            response_text="My wires are doing the cha-cha, bestie! 😵‍💫 Couldn't reach the AI. Try again?",
             safety_flagged=False
         )
         log_to_supabase(
@@ -189,7 +189,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
             prompt=prompt,
             entry=last_entry,
             category="unclear",
-            response_text="Parsing error.",
+            response_text="My wires are doing the cha-cha, bestie! 😵‍💫 Couldn't reach the AI. Try again?",
             safety_flagged=False
         )
 

@@ -54,7 +54,7 @@ st.text_area("Your response:", key="entry", height=150, on_change=response_callb
 # --- API Key ---
 api_key = st.secrets.get("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY")
 if not api_key:
-    st.warning("Missing API Key. Set OPENROUTER_API_KEY in your environment or Streamlit secrets.")
+    st.warning("Uh oh, looks like Echo's mic is off! 🎤 We need an API Key to get her chatting. Check your environment or Streamlit secrets, babes.")
 
 # --- Submit Logic ---
 if st.button("Submit"):
@@ -68,9 +68,9 @@ if st.session_state.submitted and st.session_state.response:
 
     if category == "safety":
         st.error(response_text)
-        st.info("If you're struggling, please reach out to someone you trust or seek professional help.")
+        st.info("Remember, if things feel overwhelming, please reach out to someone you trust or a professional. You've got this, but sometimes a little extra support is key. ❤️")
     elif category == "unclear" and not response_text:
-        st.warning("Hmm, we couldn't quite understand that. Try again?")
+        st.warning("My circuits are doing the cha-cha, bestie! 😵‍💫 Couldn't quite decode that one. Let's try again, shall we?")
     else:
         current_prompt = response_text
         st.success(response_text)

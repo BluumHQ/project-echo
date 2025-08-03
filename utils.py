@@ -17,7 +17,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Constants ---
 SYSTEM_PROMPT_VERSION = "v1.0"
-USER_PROMPT_VERSION = "v1.0-session"
+USER_PROMPT_VERSION = "v1.0-mood"
 
 SAFETY_RED_FLAGS = [
     "end it all", "kill myself", "suicide", "worthless", "can't go on", "hopeless",
@@ -26,12 +26,14 @@ SAFETY_RED_FLAGS = [
 ]
 FUZZY_MATCH_THRESHOLD = 80
 
+MOOD_CHOICES = ["Bad", "Not Great", "OK", "Good", "Great"]
+
 # --- Logging ---
-def log_to_csv(prompt, entry, category, response_text, safety_flagged):
+def log_to_csv(prompt, entry, mood, category, response_text, safety_flagged):
     log_file_path = os.path.join(os.path.dirname(__file__), "logs", "responses_log.csv")
     os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
 
-    fieldnames = ["timestamp", "prompt", "entry", "category", "response_text", "safety_flagged"]
+    fieldnames = ["timestamp", "prompt", "entry", "mood", "category", "response_text", "safety_flagged"]
 
     with open(log_file_path, mode='a', newline='', encoding='utf-8-sig') as log_file:
         log_writer = csv.DictWriter(log_file, fieldnames=fieldnames)
@@ -42,17 +44,19 @@ def log_to_csv(prompt, entry, category, response_text, safety_flagged):
             "timestamp": datetime.now().isoformat(),
             "prompt": prompt,
             "entry": entry,
+            "mood": mood,
             "category": category,
             "response_text": response_text,
             "safety_flagged": safety_flagged
         })
 
-def log_to_supabase(session_id, prompt, entry, category, response_text, safety_flagged):
+def log_to_supabase(session_id, prompt, entry, mood, category, response_text, safety_flagged):
     try:
         supabase.table("logs").insert({
             "timestamp": datetime.now().isoformat(),
             "prompt": prompt,
             "entry": entry,
+            "mood": mood,
             "category": category,
             "response_text": response_text,
             "safety_flagged": safety_flagged,
@@ -87,7 +91,7 @@ except FileNotFoundError:
     USER_PROMPT_TEMPLATE = ""
 
 # --- Main Classifier + Response Generator ---
-def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conversation: dict[int, str]) -> dict:
+def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conversation: dict[int, str], mood: str) -> dict:
     last_prompt_index = len(prompts) - 1
     last_entry = conversation[last_prompt_index]
 
@@ -98,6 +102,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
             log_to_csv(
                 prompt=prompt,
                 entry=last_entry,
+                mood=mood,
                 category="safety",
                 response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
                 safety_flagged=True
@@ -106,6 +111,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
                 session_id=session_id,
                 prompt=prompt,
                 entry=last_entry,
+                mood=mood,
                 category="safety",
                 response_text="🚨 You mentioned something serious. Please talk to someone you trust or reach out for support.",
                 safety_flagged=True
@@ -121,18 +127,26 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
     if not SYSTEM_PROMPT or not USER_PROMPT_TEMPLATE:
         return {"category": "unclear", "response_text": "Missing prompt templates."}
 
+    # Inject mood info
+    user_prompt = (
+        USER_PROMPT_TEMPLATE.
+        replace("{{moods}}", ", ".join(MOOD_CHOICES)).
+        replace("{{mood}}", mood)
+    )
+
     # Build reflections
     reflections = ""
     for index, prompt in enumerate(prompts):
         reflections += f"Reflection #{index+1}. " + f"Your journal prompt is: **\"{prompt.strip()}\"**."  + f"The user's entry is: **\"{conversation[index]}\"**\n"
 
     user_prompt = (
-        USER_PROMPT_TEMPLATE
+        user_prompt
         .replace("{{reflections}}", reflections.strip())
     )
 
     print(reflections)
 
+    print(user_prompt)
     # Construct and send to OpenRouter
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -159,6 +173,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
         log_to_csv(
             prompt=prompt,
             entry=last_entry,
+            mood=mood,
             category=parsed.get("category", "unknown"),
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
@@ -167,6 +182,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
             session_id=session_id,
             prompt=prompt,
             entry=last_entry,
+            mood=mood,
             category=parsed.get("category", "unknown"),
             response_text=parsed.get("response_text", ""),
             safety_flagged=False
@@ -180,6 +196,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
         log_to_csv(
             prompt=prompt,
             entry=last_entry,
+            mood=mood,
             category="unclear",
             response_text="Parsing error.",
             safety_flagged=False
@@ -188,6 +205,7 @@ def classify_and_respond(api_key: str, session_id: str, prompts: list[str], conv
             session_id=session_id,
             prompt=prompt,
             entry=last_entry,
+            mood=mood,
             category="unclear",
             response_text="Parsing error.",
             safety_flagged=False
